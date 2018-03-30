@@ -4,26 +4,142 @@ import math
 import re
 import colorsys
 
-def draw_color_table(colors, hues, saturation, scales):
-	result = []
-	for i, color in enumerate(colors):
-		hue = hues[i]
-		resultPerColor = find_color(hue, saturation, scales)
-		result.append(resultPerColor)
+def draw_color_table(x, y, z, xValues, yValues, zValues, xNames = None, yNames = None, zNames = None):
+	# condition check
+	conditions = {
+			x.lower() : { "var": "x", "values": xValues, "names": xNames },
+			y.lower() : { "var": "y", "values": yValues, "names": yNames },
+			z.lower() : { "var": "z", "values": zValues, "names": zNames },
+	}
+
+	if "hue" not in conditions:
+		raise RuntimeError("Cannot draw color table without hue")
+		return
+	else:
+		conditions["hue"]["suffix"] = ""
+
+	if "saturation" not in conditions:
+		raise RuntimeError("Cannot draw color table without saturation")
+	else:
+		conditions["saturation"]["suffix"] = "%"
+
+	if "luma" not in conditions:
+		raise RuntimeError("Cannot draw color table without luma")
+	else:
+		conditions["luma"]["suffix"] = "%"
+		findFunction = find_color_for_lumas
+
+	# find colors
+	table = []
+	index = {}
+	condition1 = conditions["hue"]
+	var1 = condition1["var"]
+	for i1, hue in enumerate(condition1["values"]):
+		index[var1] = i1
+		condition2 = conditions["saturation"]
+		var2 = condition2["var"]
+		for i2, saturation in enumerate(condition2["values"]):
+			index[var2] = i2
+			condition3 = conditions["luma"]
+			var3 = condition3["var"]
+			lumas = condition3["values"]
+			result = findFunction(hue, saturation, lumas)
+			for i3, value in enumerate(result):
+				index[var3] = i3
+				iz = index["z"]
+				ix = index["x"]
+				if len(table) <= iz:
+					tablexy = []
+					table.append(tablexy)
+				else:
+					tablexy = table[iz]
+				if len(tablexy) <= ix:
+					tabley = []
+					tablexy.append(tabley)
+				else:
+					tabley = tablexy[ix]
+				tabley.append(value)
 	
-	sys.stdout.write("Luma% ")
-	for color in colors:
-		sys.stdout.write("{:>10s}".format(color))
-	print
-	for i, val in enumerate(scales):
-		sys.stdout.write("{:<6}".format("{}%".format(val)))
-		for resultPerColor in result:
-			sys.stdout.write("   #{:02X}{:02X}{:02X}".format(*resultPerColor[i]))
+	# output color table
+	count = len(xValues)
+	width = (count if count < 10 else 10 ) * 10 + 5
+	print("="*width)
+	print(" "*(width/2 - 6) + "Color Table")
+	print("="*width)
+	if xNames is None:
+		suffix = conditions[x.lower()]["suffix"]
+		if count == 1:
+			xNames = [ "{}({}{})".format(x, xValues[0], suffix) ]
+		else:
+			xNames = [ "{}{}".format(i, suffix) for i in xValues ]
+		margin = width - len(x) - 10
+		if (margin < 0):
+			count = 0
+			remain = 0
+		else:
+			count = margin / 4
+			remain = margin % 4
+		prefix = {
+			0: "",
+			1: "",
+			2: " ",
+			3: "- "
+		}
+		suffix = {
+			0: "",
+			1: " ",
+			2: " ",
+			3: " "
+		}
+		title = " " * 8 + "<" + "- " * count + prefix[remain] + x + suffix[remain] + " -" * count + ">"
+	else:
+		title = None
+	if yNames is None:
+		suffix = conditions[y.lower()]["suffix"]
+		yNames = [ "{}{}".format(i, suffix) for i in yValues ]
+	if zNames is None:
+		suffix = conditions[z.lower()]["suffix"]
+		zNames = [ "{}({}{})".format(z, i, suffix) for i in zValues ]
+	for iz, zName in enumerate(zNames):
+		print("{}:".format(zName))
+		base = 0
+		count = len(xNames)
+		if title is not None:
+			print(title)
+		while count > 0:
+			sys.stdout.write(y)
+			margin = 5 - len(y)
+			if margin > 0:
+				sys.stdout.write(" "*margin)
+			for i in range(base, count if count < 10 else 10 ):
+				if margin > 0:
+					sys.stdout.write("{:>10s}".format(xNames[i]))
+				else:
+					margin += 10 - len(xNames[i])
+					if margin > 0:
+						sys.stdout.write(" "*margin)
+					else:
+						# minimum one space separation
+						margin -=1
+						sys.stdout.write(" ")
+					sys.stdout.write(xNames[i])
+			print
+			for j in range(len(yValues)):
+				sys.stdout.write("{:<5s}".format(yNames[j]))
+				for i in range(base, count if count < 10 else 10 ):
+					rgb = table[iz][i][j]
+					if rgb:
+						sys.stdout.write("   #{:02X}{:02X}{:02X}".format(*rgb))
+					else:
+						sys.stdout.write("<NotFound>".format(*rgb))
+				print
+			base += 10
+			count -= 10
 		print
-	print
+	print("="*width)
 	return
 
-def find_color(hue, saturation, lumas, debug = False):
+def find_color_for_lumas(hue, saturation, lumas, debug = False):
 	algorithm = what_luma_algorithm()
 	rgbRatio = get_rgb_ratio(hue)
 	if hue is None:
@@ -126,7 +242,7 @@ def find_blackwhite_by_luma(lumas):
 	if (len(lumas) != len(colorNames)):
 		raise RuntimeError("lumas count is not correct for find_blackwhite_by_luma().")
 		
-	rgbColors = find_color(None, 0, lumas)
+	rgbColors = find_color_for_lumas(None, 0, lumas)
 	scheme = {}
 	for i, color in enumerate(colorNames):
 		scheme[color] = rgbColors[i]
@@ -140,7 +256,7 @@ def find_dark_set_by_luma_and_saturation(luma, saturation):
 		if color not in colorHueMap:
 			raise RuntimeError("Cannot find hue definition for {}", color)
 		hue = colorHueMap[color]
-		[rgbColor] = find_color(hue, saturation, [luma])
+		[rgbColor] = find_color_for_lumas(hue, saturation, [luma])
 		scheme[color] = rgbColor
 
 	return scheme
@@ -159,7 +275,7 @@ def find_light_set_by_luma_and_saturation(luma, saturation):
 				hue = colorHueMap[match.group(1)]
 		if hue is None:
 			raise RuntimeError("Cannot find hue value for {} as {}".format(color, hue))
-		[rgbColor] = find_color(hue, saturation, [luma])
+		[rgbColor] = find_color_for_lumas(hue, saturation, [luma])
 		scheme[color] = rgbColor
 
 	return scheme
@@ -175,7 +291,7 @@ def find_color_by_definition(colorDefinitions):
 		hue = colorDef["hue"]
 		saturation = colorDef["saturation"]
 		luma = colorDef["luma"]
-		[rgbColor] = find_color(hue, saturation, [luma], debug)
+		[rgbColor] = find_color_for_lumas(hue, saturation, [luma], debug)
 		scheme[color] = rgbColor
 	return scheme
 
@@ -271,11 +387,14 @@ def print_color_info(color, unknown = True):
 		print("Unkown object {}".format(color))
 	return
 
-def generate_iterm2_colorscheme_file(scheme, template, output):
+def generate_iterm2_colorscheme_file(scheme, template, output, maskAlpha = None):
 	import xml.etree.ElementTree as xmlElementTree
 	print("Read template from {} ... ".format(template))
 
-	tree = xmlElementTree.parse(template)
+	source = os.path.join(os.path.dirname(os.path.abspath(__file__)), template)
+	target = os.path.join(os.path.dirname(os.path.abspath(__file__)), output)
+
+	tree = xmlElementTree.parse(source)
 
 	colorKeyMap = {
 		"Ansi 0 Color": "Black",
@@ -299,14 +418,20 @@ def generate_iterm2_colorscheme_file(scheme, template, output):
 		"Selection Color": "SelectBg",
 		"Selected Text Color": "SelectFg",
 		"Link Color": "Links",
+		"Cursor Guide Color": "LineMask",
 	}
+	alphaKey = [
+		"Cursor Guide Color"
+	]
 	rgbElement = ["Red Component", "Green Component", "Blue Component"]
+	alphaElement = "Alpha Component"
 	
 	colorList = tree.find("./dict")
 	if colorList is None:
 		raise RuntimeError("Cannot find main element dictionary")
 
 	rgb = []
+	alphaFlag = None
 	for node in colorList.iter():
 		if node.tag == "dict" and rgb:
 			value = None
@@ -314,18 +439,25 @@ def generate_iterm2_colorscheme_file(scheme, template, output):
 				if elem.tag == "real" and value is not None:
 					elem.text = "{}".format(value)
 					value = None
-				if elem.tag == "key" and elem.text in rgbElement:
-					value = rgb[rgbElement.index(elem.text)] / 255.0
+				if elem.tag == "key":
+					if elem.text in rgbElement:
+						value = rgb[rgbElement.index(elem.text)] / 255.0
+					elif alphaFlag is not None and elem.text == alphaElement:
+						value = maskAlpha / 100.0
 			rgb = []
 		elif node.tag == "key" and node.text in colorKeyMap:
 			colorName = colorKeyMap[node.text]
 			if colorName in scheme:
 				rgb = scheme[colorName]
+			if maskAlpha and node.text in alphaKey:
+				alphaFlag = alphaElement
+			else:
+				alphaFlag = None
 	
 	print("Write new colorscheme to {} ...".format(output))
 	
 	absPath = os.path.abspath(output)
-	tree.write(output, xml_declaration=True, encoding='UTF-8', method="xml")
+	tree.write(target, xml_declaration=True, encoding='UTF-8', method="xml")
 	print("Done with {}".format(absPath))
 
 	return
@@ -407,7 +539,7 @@ def what_color_hue():
 		"Yellow": 60,
 		"Cyan": 180,
 		"Magenta": 300,
-		"White": -1,
+		"White": None,
 	}
 	nicer = {
 		"Red": 0,
@@ -416,7 +548,7 @@ def what_color_hue():
 		"Yellow": 45,
 		"Cyan": 180,
 		"Magenta": 300,
-		"White": -1,
+		"White": None,
 	}
 	return nicer
 		
@@ -425,9 +557,32 @@ def what_luma_algorithm():
 
 # this is the MAIN function
 def find_color_scheme():
-	loLuma = 60
-	loSaturation = 90
-	hiLuma = 80
+
+	schema1 = {
+		"name" : "ZDark",
+		"loLuma" : 50,
+		"loSaturation" : 80,
+		"hiLuma" : 70,
+		"hiSaturation" : 60,
+		"SelectBgLuma" : 30,
+		"SelectBgSaturation" : 20,
+		"SelectFgLuma" : 80,
+		"SelectFgSaturation" : 20,
+	}
+	schema2 = {
+		"name" : "ZDark Shine",
+		"loLuma" : 60,
+		"loSaturation" : 90,
+		"hiLuma" : 80,
+		"hiSaturation" : 70,
+		"SelectBgLuma" : 40,
+		"SelectBgSaturation" : 20,
+		"SelectFgLuma" : 100,
+		"SelectFgSaturation" : 20,
+	}
+	loLuma = 50
+	loSaturation = 80
+	hiLuma = 70
 	hiSaturation = 60
 	scheme = {}
 	scheme.update(find_blackwhite_by_luma([0,40,70,100]))
@@ -437,24 +592,43 @@ def find_color_scheme():
 	specialColors = {
 		"Background": { "hue": 210, "luma": 10, "saturation": 10 },
 		"Foreground": { "hue": 30, "luma": 90, "saturation": 10 },
-		"SelectBg": { "hue": 210, "luma": 60, "saturation": 40 },
-		"SelectFg": { "hue": None, "luma": 0, "saturation": 0 },
+		"SelectBg": { "hue": 210, "luma": 30, "saturation": 20 },
+		"SelectFg": { "hue": 30, "luma": 80, "saturation": 20 },
 		"Links": { "hue": 270, "luma": loLuma, "saturation": loSaturation },
-#		"Trial": { "hue": 270, "luma": loLuma, "saturation": loSaturation, "debug": True },
+		"LineMask": { "hue": 30, "luma": 50, "saturation": 50 },
 	}
 	scheme.update(find_color_by_definition(specialColors))
 
 	print_color_scheme(scheme)
 	#print_color_scheme_details(scheme)
-	generate_iterm2_colorscheme_file(scheme, template="iTerm2.itermcolors", output="ZDark.itermcolors")
+	generate_iterm2_colorscheme_file(scheme,
+			template="template/iTerm2.itermcolors",
+			output="ZDark.itermcolors",
+			maskAlpha = 10)
 	return
 
 def print_color_luma_table():
 	colors = [ "Red", "Green", "Blue", "Yellow", "Cyan", "Magenta", "White" ]
 	hueMap = what_color_hue()
 	hues = [ hueMap[x] for x in colors ]
-	scale = [ 10, 20, 30, 40, 50, 60, 70, 80, 90 ]
-	draw_color_table(colors, hues, 100, scale)
+	lumas = range(10, 100, 10)
+	definition = {
+		"x" : "hue",
+		"y" : "luma",
+		"z" : "saturation",
+		"zValues" : [100],
+		"xValues" : hues,
+		"yValues" : lumas,
+		"xNames" : colors,
+	}
+	draw_color_table(**definition)
+	return
+
+def print_luma_saturation_table():
+	saturations = range(10, 101, 10)
+	lumas = range(10, 101, 5)
+	draw_color_table("saturation", "luma", "hue", saturations, lumas, [120, 300, 210, None])
+	#draw_color_table("luma", "saturation", "hue", lumas, saturations, [210])
 	return
 
 # use to find a color scheme
@@ -462,6 +636,7 @@ find_color_scheme()
 
 # draw color table
 #print_color_luma_table()
+print_luma_saturation_table()
 
 
 print_color_info(["c1deff","a4cdff","6F9FCF", "90b4e0","93B7DB","67A0D9"])
